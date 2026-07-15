@@ -34,7 +34,7 @@ resource "aws_apigatewayv2_integration" "alb" {
 # Routes any traffic hitting /orders to the ALB integration.
 resource "aws_apigatewayv2_route" "orders" {
   api_id    = aws_apigatewayv2_api.this.id
-  route_key = "ANY /orders/{proxy+}"
+  route_key = "$default"
   target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
 }
 

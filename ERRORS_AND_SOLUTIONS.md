@@ -38,3 +38,12 @@ This document tracks the errors encountered during the provisioning and deployme
 **Error:** `ERROR: failed to calculate checksum of ref... "/requirements.txt": not found`
 **Why it happened:** The `Dockerfile` for the `order-service` attempts to `COPY requirements.txt .`, but the file was missing from the repository directory, causing the GitHub Actions `docker build` step to fail.
 **How we fixed it:** Created `services/order-service/requirements.txt` containing the necessary Python dependencies (`fastapi`, `uvicorn`, `boto3`, `prometheus_client`, `aws_xray_sdk`).
+
+### 7. ECS Crash Loop & API Gateway 404 Not Found
+**Error:** `curl` returned `{"message":"Not Found"}` and ECS Services showed 0/2 Tasks running (Failed deployment).
+**Why it happened:** 
+1. **API Gateway Route:** The route `ANY /orders/{proxy+}` expects a trailing slash or additional path parameters. A raw `/orders` request doesn't match and gets a 404 from API Gateway.
+2. **ALB Health Checks:** The ALB Target Group was trying to hit `/healthz` on port 80 against the `nginx` sidecar. Because we used the default `nginx:1.27-alpine` image without passing it a custom `nginx.conf`, it returned 404. The ALB marked the container unhealthy, causing ECS to continually kill and restart the Fargate tasks.
+**How we fixed it:** 
+1. Changed the API Gateway route to `$default` to forward everything, and updated the ALB Listener Rule to explicitly match `["/orders", "/orders/*"]`.
+2. Removed the `nginx` container from the `ecs-service` module entirely and pointed the `load_balancer` block directly to the Python application on port 8080 (which has a working `/healthz` endpoint).

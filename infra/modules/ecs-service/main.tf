@@ -25,12 +25,6 @@ resource "aws_ecs_task_definition" "this" {
       logConfiguration = { logDriver = "awsfirelens" }
     },
     {
-      name         = "nginx"
-      image        = "nginx:1.27-alpine"
-      essential    = true
-      portMappings = [{ containerPort = 80, protocol = "tcp" }]
-    },
-    {
       name                  = "log-router"
       image                 = "amazon/aws-for-fluent-bit:stable"
       essential             = true
@@ -65,8 +59,8 @@ resource "aws_ecs_service" "this" {
     for_each = var.target_group_arn != null ? [1] : []
     content {
       target_group_arn = var.target_group_arn
-      container_name   = "nginx"
-      container_port   = 80
+      container_name   = var.service_name
+      container_port   = 8080
     }
   }
 
