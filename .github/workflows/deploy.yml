@@ -1,0 +1,62 @@
+name: Deploy (sandbox session)
+on:
+  push: { branches: [main] }
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs: { image_tag: ${{ steps.tag.outputs.tag }} }
+    steps:
+      - uses: actions/checkout@v4
+      - id: tag
+        run: echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - run: aws ecr get-login-password | docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
+      - run: |
+          docker build -t order-service:${{ steps.tag.outputs.tag }} services/order-service
+          docker tag order-service:${{ steps.tag.outputs.tag }} <account-id>.dkr.ecr.us-east-1.amazonaws.com/orderflow/order-service:${{ steps.tag.outputs.tag }}
+          docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/orderflow/order-service:${{ steps.tag.outputs.tag }}
+
+  deploy-dev:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with: { aws-access-key-id: "${{ secrets.AWS_ACCESS_KEY_ID }}", aws-secret-access-key: "${{ secrets.AWS_SECRET_ACCESS_KEY }}", aws-region: us-east-1 }
+      - run: aws ecs update-service --cluster orderflow-dev --service order-service --force-new-deployment
+      - name: Smoke test
+        run: curl -f https://<api-id>.execute-api.us-east-1.amazonaws.com/orders/healthz
+
+  deploy-staging:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with: { aws-access-key-id: "${{ secrets.AWS_ACCESS_KEY_ID }}", aws-secret-access-key: "${{ secrets.AWS_SECRET_ACCESS_KEY }}", aws-region: us-east-1 }
+      - run: aws ecs update-service --cluster orderflow-staging --service order-service --force-new-deployment
+      - name: Smoke test
+        id: smoke
+        run: curl -f https://<api-id>.execute-api.us-east-1.amazonaws.com/orders/healthz
+      - name: Rollback on failure
+        if: failure() && steps.smoke.outcome == 'failure'
+        run: |
+          PREV=$(aws ecs describe-services --cluster orderflow-staging --services order-service \
+            --query 'services[0].deployments[1].taskDefinition' --output text)
+          aws ecs update-service --cluster orderflow-staging --service order-service --task-definition $PREV
+
+  deploy-prod:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with: { aws-access-key-id: "${{ secrets.AWS_ACCESS_KEY_ID }}", aws-secret-access-key: "${{ secrets.AWS_SECRET_ACCESS_KEY }}", aws-region: us-east-1 }
+      - run: aws ecs update-service --cluster orderflow-prod --service order-service --force-new-deployment
+      - name: Smoke test
+        run: curl -f https://<api-id>.execute-api.us-east-1.amazonaws.com/orders/healthz
