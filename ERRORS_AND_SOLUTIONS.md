@@ -33,3 +33,8 @@ This document tracks the errors encountered during the provisioning and deployme
 **Error:** `BadRequestException: For VpcLink VPC_LINK, integration uri should be a valid ELB listener ARN...`
 **Why it happened:** In `infra/envs/dev/main.tf`, the API Gateway integration was accidentally pointing to the Load Balancer's ARN (`module.alb.alb_arn`), rather than the specific Listener's ARN (`module.alb.alb_listener_arn`).
 **How we fixed it:** Added `alb_listener_arn` to the `alb` module outputs, and updated the `dev/main.tf` file to pass the `alb_listener_arn` into the `api-gateway` module instead of the base ALB ARN.
+
+### 6. Docker Build Missing requirements.txt
+**Error:** `ERROR: failed to calculate checksum of ref... "/requirements.txt": not found`
+**Why it happened:** The `Dockerfile` for the `order-service` attempts to `COPY requirements.txt .`, but the file was missing from the repository directory, causing the GitHub Actions `docker build` step to fail.
+**How we fixed it:** Created `services/order-service/requirements.txt` containing the necessary Python dependencies (`fastapi`, `uvicorn`, `boto3`, `prometheus_client`, `aws_xray_sdk`).
