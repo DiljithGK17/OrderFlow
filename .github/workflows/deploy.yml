@@ -5,7 +5,8 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    outputs: { image_tag: ${{ steps.tag.outputs.tag }} }
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - id: tag
@@ -27,7 +28,10 @@ jobs:
     environment: dev
     steps:
       - uses: aws-actions/configure-aws-credentials@v4
-        with: { aws-access-key-id: "${{ secrets.AWS_ACCESS_KEY_ID }}", aws-secret-access-key: "${{ secrets.AWS_SECRET_ACCESS_KEY }}", aws-region: us-east-1 }
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
       - run: aws ecs update-service --cluster orderflow-dev --service order-service --force-new-deployment
 
 
