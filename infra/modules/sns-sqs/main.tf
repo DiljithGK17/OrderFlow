@@ -4,7 +4,7 @@
 # Implements the Event-Driven architecture (Pub/Sub pattern).
 # The order-service publishes events to SNS, and multiple SQS queues subscribe to fan-out the workload.
 
- # An SNS topic ARN for operations alerts
+# An SNS topic ARN for operations alerts
 
 # 1. Order Events SNS Topic
 # The central hub where the order-service publishes 'OrderCreated' events.
@@ -20,7 +20,7 @@ resource "aws_sqs_queue" "inventory_dlq" {
 resource "aws_sqs_queue" "inventory_queue" {
   name                       = "orderflow-inventory-queue-${var.env}"
   visibility_timeout_seconds = 30
-  redrive_policy = jsonencode({ deadLetterTargetArn = aws_sqs_queue.inventory_dlq.arn, maxReceiveCount = 5 })
+  redrive_policy             = jsonencode({ deadLetterTargetArn = aws_sqs_queue.inventory_dlq.arn, maxReceiveCount = 5 })
 }
 
 resource "aws_sqs_queue_policy" "inventory_queue_policy" {
@@ -32,10 +32,10 @@ resource "aws_sqs_queue_policy" "inventory_queue_policy" {
 
 resource "aws_sns_topic_subscription" "inventory" {
   topic_arn            = aws_sns_topic.order_events.arn
-  protocol              = "sqs"
-  endpoint              = aws_sqs_queue.inventory_queue.arn
-  raw_message_delivery  = true
-  filter_policy = jsonencode({ eventType = ["OrderCreated", "OrderCancelled"] })
+  protocol             = "sqs"
+  endpoint             = aws_sqs_queue.inventory_queue.arn
+  raw_message_delivery = true
+  filter_policy        = jsonencode({ eventType = ["OrderCreated", "OrderCancelled"] })
 }
 
 # 3. Notification Queue & DLQ (for notification-service)
@@ -46,7 +46,7 @@ resource "aws_sqs_queue" "notification_dlq" {
 resource "aws_sqs_queue" "notification_queue" {
   name                       = "orderflow-notification-queue-${var.env}"
   visibility_timeout_seconds = 30
-  redrive_policy = jsonencode({ deadLetterTargetArn = aws_sqs_queue.notification_dlq.arn, maxReceiveCount = 5 })
+  redrive_policy             = jsonencode({ deadLetterTargetArn = aws_sqs_queue.notification_dlq.arn, maxReceiveCount = 5 })
 }
 
 resource "aws_sqs_queue_policy" "notification_queue_policy" {
@@ -58,9 +58,9 @@ resource "aws_sqs_queue_policy" "notification_queue_policy" {
 
 resource "aws_sns_topic_subscription" "notification" {
   topic_arn            = aws_sns_topic.order_events.arn
-  protocol              = "sqs"
-  endpoint              = aws_sqs_queue.notification_queue.arn
-  raw_message_delivery  = true
+  protocol             = "sqs"
+  endpoint             = aws_sqs_queue.notification_queue.arn
+  raw_message_delivery = true
   # Listen for same events
   filter_policy = jsonencode({ eventType = ["OrderCreated", "OrderCancelled"] })
 }

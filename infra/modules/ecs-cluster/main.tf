@@ -9,7 +9,10 @@
 # ContainerInsights is enabled for deep visibility into performance metrics in CloudWatch.
 resource "aws_ecs_cluster" "this" {
   name = "orderflow-${var.env}"
-  setting { name = "containerInsights"; value = "enabled" }
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
 }
 
 # 2. Capacity Providers
@@ -24,15 +27,21 @@ resource "aws_ecs_cluster_capacity_providers" "this" {
 # Repositories for our 3 microservices.
 resource "aws_ecr_repository" "order_service" {
   name = "orderflow/order-service"
-  image_scanning_configuration { scan_on_push = true }
+  image_scanning_configuration {
+    scan_on_push = true
+  }
 }
 
 resource "aws_ecr_repository" "inventory_service" {
   name = "orderflow/inventory-service"
-  image_scanning_configuration { scan_on_push = true }
+  image_scanning_configuration {
+    scan_on_push = true
+  }
 }
 
 resource "aws_ecr_repository" "notification_service" {
   name = "orderflow/notification-service"
-  image_scanning_configuration { scan_on_push = true }
+  image_scanning_configuration {
+    scan_on_push = true
+  }
 }

@@ -22,8 +22,11 @@ resource "aws_lb_target_group" "order_service" {
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
   target_type = "ip" # Required for Fargate (awsvpc network mode)
-  health_check { 
-    path = "/healthz"; interval = 15; healthy_threshold = 2; unhealthy_threshold = 3 
+  health_check {
+    path                = "/healthz"
+    interval            = 15
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
   }
 }
 
@@ -36,7 +39,11 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
   default_action {
     type = "fixed-response"
-    fixed_response { content_type = "text/plain"; message_body = "Not Found"; status_code  = "404" }
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Not Found"
+      status_code  = "404"
+    }
   }
 }
 
@@ -46,6 +53,13 @@ resource "aws_lb_listener" "http" {
 resource "aws_lb_listener_rule" "order_service" {
   listener_arn = aws_lb_listener.http.arn
   priority     = 10
-  condition { path_pattern { values = ["/orders/*"] } }
-  action { type = "forward"; target_group_arn = aws_lb_target_group.order_service.arn }
+  condition {
+    path_pattern {
+      values = ["/orders/*"]
+    }
+  }
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.order_service.arn
+  }
 }

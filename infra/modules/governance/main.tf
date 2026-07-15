@@ -23,8 +23,8 @@ resource "aws_cloudtrail" "this" {
 resource "aws_iam_role" "config_role" {
   name = "orderflow-config-role"
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{ Action = "sts:AssumeRole"; Effect = "Allow"; Principal = { Service = "config.amazonaws.com" } }]
+    Version   = "2012-10-17"
+    Statement = [{ Action = "sts:AssumeRole", Effect = "Allow", Principal = { Service = "config.amazonaws.com" } }]
   })
 }
 
@@ -46,11 +46,17 @@ resource "aws_config_configuration_recorder" "this" {
 # Rule 1: Checks that no S3 buckets are public.
 resource "aws_config_config_rule" "s3_not_public" {
   name = "s3-bucket-public-read-prohibited"
-  source { owner = "AWS"; source_identifier = "S3_BUCKET_PUBLIC_READ_PROHIBITED" }
+  source {
+    owner             = "AWS"
+    source_identifier = "S3_BUCKET_PUBLIC_READ_PROHIBITED"
+  }
 }
 
 # Rule 2: Checks that all EBS volumes attached to EC2 instances are encrypted.
 resource "aws_config_config_rule" "ebs_encrypted" {
   name = "encrypted-volumes"
-  source { owner = "AWS"; source_identifier = "ENCRYPTED_VOLUMES" }
+  source {
+    owner             = "AWS"
+    source_identifier = "ENCRYPTED_VOLUMES"
+  }
 }

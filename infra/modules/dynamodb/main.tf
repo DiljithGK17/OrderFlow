@@ -4,7 +4,7 @@
 # Creates the NoSQL tables for the order platform.
 # All tables use PAY_PER_REQUEST to avoid hourly provisioning costs in the sandbox.
 
- # Environment name (e.g., dev, staging)
+# Environment name (e.g., dev, staging)
 
 # 1. Orders Table
 # Stores all orders created by the system.
@@ -13,9 +13,18 @@ resource "aws_dynamodb_table" "orders" {
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "orderId" # Primary Key
 
-  attribute { name = "orderId";    type = "S" }
-  attribute { name = "customerId"; type = "S" }
-  attribute { name = "status";     type = "S" }
+  attribute {
+    name = "orderId"
+    type = "S"
+  }
+  attribute {
+    name = "customerId"
+    type = "S"
+  }
+  attribute {
+    name = "status"
+    type = "S"
+  }
 
   # Global Secondary Index (GSI) allows querying orders by customer and status
   global_secondary_index {
@@ -34,7 +43,10 @@ resource "aws_dynamodb_table" "inventory" {
   name         = "orderflow-inventory-${var.env}"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "sku" # Primary Key
-  attribute { name = "sku"; type = "S" }
+  attribute {
+    name = "sku"
+    type = "S"
+  }
 }
 
 # 3. Idempotency Table
@@ -44,10 +56,8 @@ resource "aws_dynamodb_table" "idempotency" {
   name         = "orderflow-idempotency-${var.env}"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "requestId" # Primary Key
-  attribute { name = "requestId"; type = "S" }
-  
-  ttl { 
-    attribute_name = "expiresAt" # DynamoDB will delete the item when the Unix timestamp in expiresAt passes
-    enabled = true 
+  attribute {
+    name = "requestId"
+    type = "S"
   }
 }

@@ -51,30 +51,4 @@ resource "aws_apigatewayv2_stage" "this" {
   }
 }
 
-# 6. Web Application Firewall (WAF)
-# Protects the API Gateway against common web exploits and implements strict rate limiting.
-resource "aws_wafv2_web_acl" "api" {
-  name  = "orderflow-api-waf"
-  scope = "REGIONAL"
-  default_action { allow {} } # Allow requests by default
 
-  # Rate limiting rule: blocks IPs sending more than 2000 requests per 5 minutes
-  rule {
-    name     = "rate-limit"
-    priority = 1
-    action { block {} }
-    statement {
-      rate_based_statement { limit = 2000; aggregate_key_type = "IP" }
-    }
-    visibility_config { sampled_requests_enabled = true; cloudwatch_metrics_enabled = true; metric_name = "rate-limit" }
-  }
-
-  visibility_config { sampled_requests_enabled = true; cloudwatch_metrics_enabled = true; metric_name = "orderflow-api-waf" }
-}
-
-# 7. WAF Association
-# Attaches the WAF Web ACL to the API Gateway Stage.
-resource "aws_wafv2_web_acl_association" "api" {
-  resource_arn = aws_apigatewayv2_stage.this.arn
-  web_acl_arn  = aws_wafv2_web_acl.api.arn
-}

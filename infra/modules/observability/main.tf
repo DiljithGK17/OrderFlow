@@ -19,8 +19,8 @@ data "aws_ami" "amazon_linux_2023" {
 resource "aws_iam_role" "ops_ec2" {
   name = "orderflow-ops-ec2-role"
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{ Action = "sts:AssumeRole"; Effect = "Allow"; Principal = { Service = "ec2.amazonaws.com" } }]
+    Version   = "2012-10-17"
+    Statement = [{ Action = "sts:AssumeRole", Effect = "Allow", Principal = { Service = "ec2.amazonaws.com" } }]
   })
 }
 resource "aws_iam_role_policy_attachment" "ssm" {
@@ -58,9 +58,9 @@ resource "aws_instance" "ops" {
   subnet_id              = var.subnet_ids[0]
   vpc_security_group_ids = [var.ops_ec2_sg_id]
   iam_instance_profile   = aws_iam_instance_profile.ops_ec2.name
-  
+
   # Injects the script that spins up the observability stack via Docker Compose
-  user_data              = file("${path.module}/../../../monitoring/ops-ec2-userdata.sh")
-  
+  user_data = file("${path.module}/../../../monitoring/ops-ec2-userdata.sh")
+
   tags = { Name = "orderflow-ops-ec2", Service = "observability" }
 }

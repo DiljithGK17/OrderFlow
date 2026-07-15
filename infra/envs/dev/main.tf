@@ -14,17 +14,17 @@ module "security" {
 
 module "dynamodb" {
   source = "../../modules/dynamodb"
-  env = var.env
+  env    = var.env
 }
 
 module "sns_sqs" {
-  source = "../../modules/sns-sqs"
-  env = var.env
-  ops_alerts_topic_arn = "arn:aws:sns:us-east-1:123456789012:orderflow-ops-alerts" 
+  source               = "../../modules/sns-sqs"
+  env                  = var.env
+  ops_alerts_topic_arn = "arn:aws:sns:us-east-1:123456789012:orderflow-ops-alerts"
 }
 
 module "iam" {
-  source = "../../modules/iam"
+  source                 = "../../modules/iam"
   orders_table_arn       = module.dynamodb.orders_table_arn
   idempotency_table_arn  = module.dynamodb.idempotency_table_arn
   inventory_table_arn    = module.dynamodb.inventory_table_arn
@@ -35,21 +35,23 @@ module "iam" {
 
 module "ecs_cluster" {
   source = "../../modules/ecs-cluster"
-  env = var.env
+  env    = var.env
 }
 
 module "alb" {
-  source = "../../modules/alb"
+  source             = "../../modules/alb"
   subnet_ids         = module.default_vpc.subnet_ids
   security_group_ids = [module.security.alb_sg_id]
   vpc_id             = module.default_vpc.vpc_id
 }
 
 module "api_gateway" {
-  source = "../../modules/api-gateway"
-  subnet_ids         = module.default_vpc.subnet_ids
+  source             = "../../modules/api-gateway"
+  # API Gateway VPC Links are not supported in us-east-1c (use1-az3). 
+  # We slice the first two subnets to ensure it deploys in valid AZs.
+  subnet_ids         = slice(module.default_vpc.subnet_ids, 0, 2)
   security_group_ids = [module.security.ecs_sg_id]
-  alb_listener_arn   = module.alb.alb_arn
+  alb_listener_arn   = module.alb.alb_listener_arn
 }
 
 # ==========================================
@@ -65,7 +67,7 @@ module "order_service" {
   security_group_ids = [module.security.ecs_sg_id]
   execution_role_arn = module.iam.ecs_task_execution_role_arn
   task_role_arn      = module.iam.order_service_task_role_arn
-  
+
   service_name       = "order-service"
   ecr_repository_url = module.ecs_cluster.order_service_repo_url
   target_group_arn   = module.alb.order_service_tg_arn # Requires ALB
@@ -80,7 +82,7 @@ module "inventory_service" {
   security_group_ids = [module.security.ecs_sg_id]
   execution_role_arn = module.iam.ecs_task_execution_role_arn
   task_role_arn      = module.iam.inventory_service_task_role_arn
-  
+
   service_name       = "inventory-service"
   ecr_repository_url = module.ecs_cluster.inventory_service_repo_url
   # No target_group_arn passed, it runs asynchronously behind the scenes
@@ -95,7 +97,7 @@ module "notification_service" {
   security_group_ids = [module.security.ecs_sg_id]
   execution_role_arn = module.iam.ecs_task_execution_role_arn
   task_role_arn      = module.iam.notification_service_task_role_arn
-  
+
   service_name       = "notification-service"
   ecr_repository_url = module.ecs_cluster.notification_service_repo_url
   # No target_group_arn passed
@@ -110,10 +112,5 @@ module "observability" {
   subnet_ids           = module.default_vpc.subnet_ids
   ops_ec2_sg_id        = module.security.ops_ec2_sg_id
   alb_arn_suffix       = module.alb.alb_arn_suffix
-  ops_alerts_topic_arn = "arn:aws:sns:us-east-1:123456789012:orderflow-ops-alerts" 
-}
-
-module "governance" {
-  source = "../../modules/governance"
-  env    = var.env
+  ops_alerts_topic_arn = "arn:aws:sns:us-east-1:123456789012:orderflow-ops-alerts"
 }

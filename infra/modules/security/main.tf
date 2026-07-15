@@ -5,7 +5,7 @@
 # Because we are using the public subnets of the default VPC, we use 
 # these Security Groups to act as our primary network boundary.
 
- # Passed in from the default-vpc-lookup module
+# Passed in from the default-vpc-lookup module
 
 # 1. Application Load Balancer (ALB) Security Group
 # Allows inbound HTTPS/HTTP traffic from the public internet (0.0.0.0/0).
@@ -14,11 +14,15 @@ resource "aws_security_group" "alb" {
   name   = "orderflow-alb-sg"
   vpc_id = var.vpc_id
   ingress {
-    from_port = 443; to_port = 443; protocol = "tcp"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
   egress {
-    from_port = 0; to_port = 0; protocol = "-1"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
@@ -30,11 +34,15 @@ resource "aws_security_group" "ecs" {
   name   = "orderflow-ecs-sg"
   vpc_id = var.vpc_id
   ingress {
-    from_port       = 8080; to_port = 8080; protocol = "tcp"
-    security_groups = [aws_security_group.alb.id] # Linked to ALB Security Group
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
   }
   egress {
-    from_port = 0; to_port = 0; protocol = "-1"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
@@ -46,7 +54,9 @@ resource "aws_security_group" "ops_ec2" {
   name   = "orderflow-ops-ec2-sg"
   vpc_id = var.vpc_id
   egress {
-    from_port = 0; to_port = 0; protocol = "-1"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
