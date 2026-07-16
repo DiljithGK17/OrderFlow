@@ -132,5 +132,53 @@ If something breaks, we need to know immediately and have a place to debug it sa
 
 ---
 
+## 11. Post-Infrastructure Flow: The Application Lifecycle
+
+Building the AWS infrastructure (VPC, ECS, Load Balancers, DynamoDB) is only the first half of the project. Once the infrastructure is ready, we need to deploy the actual **Application Code** into it. 
+
+### Does this have a Frontend?
+No. This is a purely **Backend API + Infrastructure** architecture. It represents an enterprise-grade Microservices backend. Clients (like web applications, mobile apps, or Postman) will send HTTP JSON payloads to the API Gateway. 
+
+### Where is the Application Code?
+The core business logic lives entirely inside the `services/` directory. Each microservice (e.g., `services/order-service`) contains raw Python code (FastAPI) that processes the orders, talks to DynamoDB, and publishes messages to SNS.
+
+### What do the `monitoring` and `nginx` folders do?
+- **`nginx/`**: In our ECS Task Definitions, we deploy a "Sidecar" pattern. Instead of exposing the Python application directly to the Load Balancer, we put a lightweight NGINX web server container right next to it inside the same Fargate task. NGINX receives the HTTP traffic on port 80, handles routing/proxying, and forwards it to the Python app on port 8080.
+- **`monitoring/`**: Contains the startup scripts (e.g., `ops-ec2-userdata.sh`) for our Operations EC2 instance. When that EC2 instance boots up, it runs this script to automatically install and configure **Prometheus** (metrics database), **Grafana** (visual dashboards), and **Loki** (log aggregation). This gives us a dedicated, self-hosted observability platform to monitor the health of our microservices without relying solely on AWS CloudWatch.
+
+### How does the CI/CD Pipeline Run?
+The entire application deployment process is automated via GitHub Actions (`.github/workflows/deploy.yml`):
+1. **Trigger:** Whenever you push code to the `main` branch, the pipeline wakes up.
+2. **Authenticate:** It securely logs into your AWS account using the Sandbox credentials you saved as GitHub Secrets.
+3. **The Dockerfile:** The pipeline reads the `Dockerfile` inside `services/order-service`. A Dockerfile is a set of instructions that tells the system: *"Download a base Linux environment, install Python, install the dependencies from `requirements.txt`, and copy our application code inside."* This creates a standardized, isolated package called a **Docker Image**.
+4. **Push to Registry:** The pipeline pushes this Docker Image into **AWS ECR** (Elastic Container Registry), which acts as a secure storage drive in the cloud for container images.
+5. **Update Compute:** Finally, the pipeline runs an AWS CLI command telling the **ECS Cluster** to update its running services. ECS gracefully shuts down the old, empty containers and spins up new containers using the brand-new Docker image we just pushed to ECR.
+
+Once ECS spins up the new container and it passes the Load Balancer's `/healthz` health check, the application is live and ready to process real traffic!
+
+---
+
+## 12. Architectural Design Decisions & FAQs
+
+### If API Gateway uses `$default` to route everything to the ALB, do we still need it?
+Yes, absolutely! Even acting as a simple passthrough, the API Gateway provides critical "API Management" features that an ALB does not natively handle well:
+1. **Throttling & Rate Limiting:** We configured our API Gateway Stage to restrict traffic to 100 requests/second. This protects our backend databases and compute from DDoS attacks or runaway client scripts.
+2. **Authentication:** In a full production environment, API Gateway natively integrates with AWS Cognito or custom Lambda Authorizers to instantly reject unauthorized requests *before* they ever reach our VPC compute layer.
+3. **Network Security:** While our Sandbox limitations forced the ALB into public subnets, a true production architecture places the ALB in *Private* subnets. The API Gateway + VPC Link acts as the only secure bridge from the public internet into your private network.
+
+### Why did we originally include an NGINX Sidecar, and why did we remove it?
+**Why we included it:** In enterprise microservices, putting a lightweight NGINX proxy right in front of Python (a "sidecar") is a best practice. Python web servers (like Uvicorn) are not heavily optimized for things like SSL termination, mitigating slow-client DDoS attacks (Slowloris), or serving static assets. NGINX acts as a hardened shield, buffering slow requests and forwarding only clean, rapid traffic to Python.
+
+**Why we removed it:** To make NGINX proxy traffic to Python, it requires a custom `nginx.conf` file. Because ECS Fargate doesn't easily support mounting local config files, we would have had to build a custom NGINX Docker image, create a new ECR repository for it, and add it to our CI/CD pipeline. For this specific sandbox environment, that added unnecessary complexity. Modern Uvicorn is robust enough to handle direct ALB traffic for our current needs, so we simplified the architecture by removing the sidecar.
+
+### How exactly do the ALB Health Checks work?
+1. The Load Balancer has a **Target Group** (`order-service-tg`), which keeps a dynamic list of IP addresses for every running Fargate container.
+2. Every 15 seconds, the Target Group automatically sends an HTTP `GET /healthz` request to those IP addresses on port 8080.
+3. The FastAPI Python code explicitly defines this route (`@app.get("/healthz")`) and returns a simple `{"status": "ok"}` (HTTP 200).
+4. If the ALB receives the HTTP 200 OK, it marks the container as **Healthy** and actively forwards user API traffic to it.
+5. If the application crashes, hangs, or returns an error (like the 404 we saw when NGINX was misconfigured), the ALB marks it **Unhealthy**. It immediately stops sending user traffic to that container, and AWS ECS automatically kills the container and spins up a fresh replacement to heal the system.
+
+---
+
 ## Summary
 When `terraform apply` runs successfully, it provisions exactly these 57 distinct AWS resources. This represents a complete, production-ready, highly available, dynamically scalable, and observable cloud-native environment.

@@ -47,3 +47,8 @@ This document tracks the errors encountered during the provisioning and deployme
 **How we fixed it:** 
 1. Changed the API Gateway route to `$default` to forward everything, and updated the ALB Listener Rule to explicitly match `["/orders", "/orders/*"]`.
 2. Removed the `nginx` container from the `ecs-service` module entirely and pointed the `load_balancer` block directly to the Python application on port 8080 (which has a working `/healthz` endpoint).
+
+### 8. KodeKloud Sandbox Resource Limits Violation
+**Error:** `Read Before Proceeding: Service AWS ECS... exceeds the max limits of 2048 units of CPU or 4096 GiB of memory...`
+**Why it happened:** KodeKloud AWS sandboxes have strict quotas to prevent abuse. We had 3 services (`order`, `inventory`, `notification`) running with a `desired_count = 2` (High Availability). This equals 6 running Fargate tasks. Our Terraform configured each task with `cpu = "512"` (0.5 vCPU) and `memory = "1024"` (1GB). 6 tasks * 512 CPU = 3072 total CPU units, which exceeded their hard limit of 2048.
+**How we fixed it:** In `infra/modules/ecs-service/main.tf`, we reduced the Fargate task allocation to `cpu = "256"` (0.25 vCPU) and `memory = "512"` (0.5GB). This drops our total usage across all 6 containers to 1536 CPU and 3072 Memory, safely keeping us under the sandbox limits while maintaining a highly available (2 tasks per service) deployment.
