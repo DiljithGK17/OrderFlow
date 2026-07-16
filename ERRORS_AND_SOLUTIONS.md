@@ -57,3 +57,11 @@ This document tracks the errors encountered during the provisioning and deployme
 **Error:** `CannotPullContainerError: failed to resolve ref .../orderflow/order-service:latest: not found`
 **Why it happened:** The ECS Task Definition references the image as `:latest`. However, the `deploy.yml` pipeline was only tagging and pushing the image with a Git SHA tag (e.g., `:af75ef2`). It never pushed a `:latest` tag to ECR, so when ECS tried to pull `:latest` it simply didn't exist. Additionally, the `docker push` command was accidentally broken across two lines in the YAML file, meaning the push never actually ran successfully on the previous session.
 **How we fixed it:** Updated `.github/workflows/deploy.yml` to push two tags on every build: the specific SHA tag (for auditability) and also `:latest` (so ECS can always pull). Also fixed the broken multi-line `docker push` command that had a stray newline.
+
+### 10. ECS Task Crash Loop — FluentBit Sidecar Failure
+**Error:** `Service Unavailable` from API Gateway. ECS showed `Running: 0, Pending: 0, Desired: 2`. Stopped tasks showed all containers in `STOPPED` state with no exit code (indicating the task was killed before the containers ran).
+**Why it happened:** The ECS Task Definition used `awsfirelens` as the log driver for the main `order-service` container. The `awsfirelens` driver depends entirely on the `log-router` sidecar container (`amazon/aws-for-fluent-bit:stable`) being alive and healthy first. The FluentBit sidecar was crashing on startup — likely due to missing IAM permissions or misconfigured output destinations. Because the log-router was marked `essential = true`, when it crashed, ECS immediately killed the entire Fargate task including the main application container. This happened before any container even reported a failure reason.
+**How we fixed it:**
+1. Removed the `log-router` (FluentBit) and `xray-daemon` sidecar containers from `infra/modules/ecs-service/main.tf` entirely.
+2. Replaced the `awsfirelens` log driver with the native `awslogs` driver which ships logs directly to AWS CloudWatch Logs — zero external dependencies.
+3. Added `CloudWatchLogsFullAccess` managed policy to the ECS Task Execution IAM Role in `infra/modules/iam/main.tf` so it can auto-create the log group on first run.
