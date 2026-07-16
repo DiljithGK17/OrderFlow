@@ -1,10 +1,7 @@
 from fastapi import FastAPI, Request
 import boto3, uuid, time
 from prometheus_client import Counter, Histogram, make_asgi_app
-from aws_xray_sdk.core import xray_recorder, patch_all
 import os
-
-patch_all()   # auto-instruments boto3 calls for X-Ray tracing
 
 app = FastAPI()
 app.mount("/metrics", make_asgi_app())
@@ -22,7 +19,6 @@ def healthz():
     return {"status": "ok"}
 
 @app.post("/orders")
-@xray_recorder.capture("create_order")
 def create_order(payload: dict, request: Request):
     request_id = request.headers.get("Idempotency-Key", str(uuid.uuid4()))
 

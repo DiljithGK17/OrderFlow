@@ -140,3 +140,8 @@ logConfiguration = {
 2. Added an `environment_variables` map variable to `infra/modules/ecs-service/variables.tf`.
 3. Updated the `container_definitions` block in `infra/modules/ecs-service/main.tf` to iterate over the `environment_variables` and inject them as container env vars.
 4. Passed the required ARNs, table names, and queue URLs to all three microservices in `infra/envs/dev/main.tf`.
+
+### 15. 500 Internal Server Error — X-Ray SegmentNotFoundException
+**Error:** `Internal Server Error` from `/orders` endpoint, and completely empty CloudWatch logs.
+**Why it happened:** The `order-service` Python code used `aws_xray_sdk.core.xray_recorder.capture` as a decorator on the `/orders` route, and called `patch_all()` to instrument boto3. However, because we are using FastAPI, the incoming request does not automatically generate a base X-Ray Segment (unless you explicitly add the AWS X-Ray ASGI Middleware). Without a base segment, the `@xray_recorder.capture()` decorator throws a `SegmentNotFoundException` immediately before the route function even executes, causing a 500 error.
+**How we fixed it:** Removed all X-Ray code (`aws_xray_sdk` imports, `patch_all()`, and the `@xray_recorder.capture` decorator) from `services/order-service/src/main.py` to simplify the application and prevent the unhandled exception.
