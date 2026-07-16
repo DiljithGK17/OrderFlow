@@ -16,11 +16,13 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
-      - run: aws ecr get-login-password | docker login --username AWS --password-stdin 905418031803.dkr.ecr.us-east-1.amazonaws.com
-
+      - run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          aws ecr get-login-password | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
       - name: Build and push order-service
         run: |
-          ECR="905418031803.dkr.ecr.us-east-1.amazonaws.com/orderflow/order-service"
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR="$ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/orderflow/order-service"
           docker build -t order-service:${{ steps.tag.outputs.tag }} services/order-service
           docker tag order-service:${{ steps.tag.outputs.tag }} $ECR:${{ steps.tag.outputs.tag }}
           docker tag order-service:${{ steps.tag.outputs.tag }} $ECR:latest
@@ -29,7 +31,8 @@ jobs:
 
       - name: Build and push inventory-service
         run: |
-          ECR="905418031803.dkr.ecr.us-east-1.amazonaws.com/orderflow/inventory-service"
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR="$ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/orderflow/inventory-service"
           docker build -t inventory-service:${{ steps.tag.outputs.tag }} services/inventory-service
           docker tag inventory-service:${{ steps.tag.outputs.tag }} $ECR:${{ steps.tag.outputs.tag }}
           docker tag inventory-service:${{ steps.tag.outputs.tag }} $ECR:latest
@@ -38,7 +41,8 @@ jobs:
 
       - name: Build and push notification-service
         run: |
-          ECR="905418031803.dkr.ecr.us-east-1.amazonaws.com/orderflow/notification-service"
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR="$ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/orderflow/notification-service"
           docker build -t notification-service:${{ steps.tag.outputs.tag }} services/notification-service
           docker tag notification-service:${{ steps.tag.outputs.tag }} $ECR:${{ steps.tag.outputs.tag }}
           docker tag notification-service:${{ steps.tag.outputs.tag }} $ECR:latest
