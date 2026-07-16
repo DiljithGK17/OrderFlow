@@ -126,3 +126,8 @@ logConfiguration = {
 2. Created the entire `services/notification-service/` directory with `src/consumer.py`, `Dockerfile`, and `requirements.txt`.
 3. Updated `.github/workflows/deploy.yml` to build and push all three service images in the same pipeline run, and updated the `deploy-dev` job to force a new deployment on all three ECS services simultaneously.
 
+
+### 13. API Gateway 503 Service Unavailable — ALB Security Group Missing Port 80
+**Error:** `{"message":"Service Unavailable"}` returned by API Gateway even though all 3 ECS services showed `2/2 Tasks running`.
+**Why it happened:** The ALB Security Group (`orderflow-alb-sg`) in `infra/modules/security/main.tf` only had an ingress rule for **port 443 (HTTPS)**. However, our ALB Listener is configured on **port 80 (HTTP)** — the VPC Link from API Gateway connects to the ALB over HTTP internally. Because port 80 was blocked at the security group level, the ALB never received health check traffic from the ECS tasks, so it had zero healthy targets and returned 503 to every request.
+**How we fixed it:** Added a port 80 ingress rule to the ALB Security Group, allowing HTTP from `0.0.0.0/0`. The 443 rule is retained for future HTTPS/TLS support. Applied via `make up`.
