@@ -66,3 +66,24 @@ resource "aws_security_group" "ops_ec2" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
+
+# 4. VPC Link Security Group
+# API Gateway VPC Links require their own security group with open
+# inbound/outbound rules to allow the managed AWS network to route
+# traffic through the VPC Link ENI to the ALB.
+resource "aws_security_group" "vpc_link" {
+  name   = "orderflow-vpc-link-sg"
+  vpc_id = var.vpc_id
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
