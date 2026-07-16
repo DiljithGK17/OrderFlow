@@ -17,10 +17,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
       - run: aws ecr get-login-password | docker login --username AWS --password-stdin 905418031803.dkr.ecr.us-east-1.amazonaws.com
-      - run: |
+      - name: Build, tag and push image
+        run: |
+          ECR="905418031803.dkr.ecr.us-east-1.amazonaws.com/orderflow/order-service"
           docker build -t order-service:${{ steps.tag.outputs.tag }} services/order-service
-          docker tag order-service:${{ steps.tag.outputs.tag }} 905418031803.dkr.ecr.us-east-1.amazonaws.com/orderflow/order-service:${{ steps.tag.outputs.tag }}
-          docker push 905418031803.dkr.ecr.us-east-1.amazonaws.com/orderflow/order-service:${{ steps.tag.outputs.tag }}
+          docker tag order-service:${{ steps.tag.outputs.tag }} $ECR:${{ steps.tag.outputs.tag }}
+          docker tag order-service:${{ steps.tag.outputs.tag }} $ECR:latest
+          docker push $ECR:${{ steps.tag.outputs.tag }}
+          docker push $ECR:latest
 
   deploy-dev:
     needs: build-and-push
