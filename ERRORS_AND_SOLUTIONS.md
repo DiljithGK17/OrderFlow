@@ -117,3 +117,12 @@ logConfiguration = {
 1. Changed the builder stage to use a standard `pip install --no-cache-dir` (without `--target`), so pip installs packages into its default location (`/usr/local/lib` and `/usr/local/bin`).
 2. Updated the final stage to copy both `/usr/local/lib` (libraries) **and** `/usr/local/bin` (executables including `uvicorn`) from the builder.
 3. Changed the container `CMD` to `["python", "-m", "uvicorn", ...]` as an additional safeguard — this invokes uvicorn as a Python module rather than relying on the binary being discoverable on `$PATH`.
+
+### 12. inventory-service & notification-service — No ECR Image / Missing Dockerfile
+**Error:** ECS showed `0/2 Tasks running (Failed)` for `inventory-service` and `notification-service`. Root cause: `CannotPullContainerError` — no image existed in ECR for those two services.
+**Why it happened:** The `deploy.yml` pipeline only built and pushed the `order-service` image. The `inventory-service` directory had no `Dockerfile` or `requirements.txt`. The `notification-service` directory didn't exist at all in `services/`.
+**How we fixed it:**
+1. Created `services/inventory-service/Dockerfile` and `requirements.txt` using the same multi-stage pattern as `order-service`, with `CMD ["python", "consumer.py"]` since it is a long-polling SQS worker, not an HTTP server.
+2. Created the entire `services/notification-service/` directory with `src/consumer.py`, `Dockerfile`, and `requirements.txt`.
+3. Updated `.github/workflows/deploy.yml` to build and push all three service images in the same pipeline run, and updated the `deploy-dev` job to force a new deployment on all three ECS services simultaneously.
+

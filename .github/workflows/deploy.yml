@@ -17,12 +17,31 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
       - run: aws ecr get-login-password | docker login --username AWS --password-stdin 905418031803.dkr.ecr.us-east-1.amazonaws.com
-      - name: Build, tag and push image
+
+      - name: Build and push order-service
         run: |
           ECR="905418031803.dkr.ecr.us-east-1.amazonaws.com/orderflow/order-service"
           docker build -t order-service:${{ steps.tag.outputs.tag }} services/order-service
           docker tag order-service:${{ steps.tag.outputs.tag }} $ECR:${{ steps.tag.outputs.tag }}
           docker tag order-service:${{ steps.tag.outputs.tag }} $ECR:latest
+          docker push $ECR:${{ steps.tag.outputs.tag }}
+          docker push $ECR:latest
+
+      - name: Build and push inventory-service
+        run: |
+          ECR="905418031803.dkr.ecr.us-east-1.amazonaws.com/orderflow/inventory-service"
+          docker build -t inventory-service:${{ steps.tag.outputs.tag }} services/inventory-service
+          docker tag inventory-service:${{ steps.tag.outputs.tag }} $ECR:${{ steps.tag.outputs.tag }}
+          docker tag inventory-service:${{ steps.tag.outputs.tag }} $ECR:latest
+          docker push $ECR:${{ steps.tag.outputs.tag }}
+          docker push $ECR:latest
+
+      - name: Build and push notification-service
+        run: |
+          ECR="905418031803.dkr.ecr.us-east-1.amazonaws.com/orderflow/notification-service"
+          docker build -t notification-service:${{ steps.tag.outputs.tag }} services/notification-service
+          docker tag notification-service:${{ steps.tag.outputs.tag }} $ECR:${{ steps.tag.outputs.tag }}
+          docker tag notification-service:${{ steps.tag.outputs.tag }} $ECR:latest
           docker push $ECR:${{ steps.tag.outputs.tag }}
           docker push $ECR:latest
 
@@ -36,6 +55,8 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
-      - run: aws ecs update-service --cluster orderflow-dev --service order-service --force-new-deployment
-
-
+      - name: Force new deployments for all services
+        run: |
+          aws ecs update-service --cluster orderflow-dev --service order-service --force-new-deployment
+          aws ecs update-service --cluster orderflow-dev --service inventory-service --force-new-deployment
+          aws ecs update-service --cluster orderflow-dev --service notification-service --force-new-deployment
