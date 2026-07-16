@@ -14,27 +14,22 @@ resource "aws_ecs_task_definition" "this" {
   execution_role_arn       = var.execution_role_arn
   task_role_arn            = var.task_role_arn
 
-  # Container Definitions
+  # Container Definitions — single container using CloudWatch awslogs
   container_definitions = jsonencode([
     {
-      name             = var.service_name
-      image            = "${var.ecr_repository_url}:latest"
-      essential        = true
-      portMappings     = [{ containerPort = 8080, protocol = "tcp" }]
-      environment      = [{ name = "AWS_XRAY_DAEMON_ADDRESS", value = "127.0.0.1:2000" }]
-      logConfiguration = { logDriver = "awsfirelens" }
-    },
-    {
-      name                  = "log-router"
-      image                 = "amazon/aws-for-fluent-bit:stable"
-      essential             = true
-      firelensConfiguration = { type = "fluentbit" }
-    },
-    {
-      name         = "xray-daemon"
-      image        = "amazon/aws-xray-daemon:latest"
-      essential    = false
-      portMappings = [{ containerPort = 2000, protocol = "udp" }]
+      name         = var.service_name
+      image        = "${var.ecr_repository_url}:latest"
+      essential    = true
+      portMappings = [{ containerPort = 8080, protocol = "tcp" }]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = "/ecs/${var.service_name}"
+          "awslogs-region"        = "us-east-1"
+          "awslogs-stream-prefix" = "ecs"
+          "awslogs-create-group"  = "true"
+        }
+      }
     }
   ])
 }

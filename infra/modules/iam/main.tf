@@ -25,6 +25,11 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+resource "aws_iam_role_policy_attachment" "ecs_task_execution_logs" {
+  role       = aws_iam_role.ecs_task_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"
+}
+
 # 2. Order Service Task Role
 # Grants permissions to access the Orders/Idempotency tables and publish to SNS.
 resource "aws_iam_role" "order_service_task" {
