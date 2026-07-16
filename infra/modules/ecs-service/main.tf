@@ -14,17 +14,40 @@ resource "aws_ecs_task_definition" "this" {
   execution_role_arn       = var.execution_role_arn
   task_role_arn            = var.task_role_arn
 
-  # Container Definitions — single container using CloudWatch awslogs
+  # Container Definitions — FluentBit sidecar for multi-destination log routing
   container_definitions = jsonencode([
+    # Main application container — logs via awsfirelens to FluentBit
     {
       name         = var.service_name
       image        = "${var.ecr_repository_url}:latest"
       essential    = true
       portMappings = [{ containerPort = 8080, protocol = "tcp" }]
       logConfiguration = {
+        logDriver = "awsfirelens"
+        options = {
+          Name              = "cloudwatch_logs"
+          region            = "us-east-1"
+          log_group_name    = "/ecs/${var.service_name}"
+          log_stream_prefix = "ecs/"
+          auto_create_group = "true"
+        }
+      }
+    },
+    # FluentBit sidecar — receives logs from awsfirelens and routes to CloudWatch
+    {
+      name      = "log-router"
+      image     = "amazon/aws-for-fluent-bit:stable"
+      essential = true
+      firelensConfiguration = {
+        type = "fluentbit"
+        options = {
+          enable-ecs-log-metadata = "true"
+        }
+      }
+      logConfiguration = {
         logDriver = "awslogs"
         options = {
-          "awslogs-group"         = "/ecs/${var.service_name}"
+          "awslogs-group"         = "/ecs/fluent-bit"
           "awslogs-region"        = "us-east-1"
           "awslogs-stream-prefix" = "ecs"
           "awslogs-create-group"  = "true"
