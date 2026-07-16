@@ -22,6 +22,7 @@ resource "aws_ecs_task_definition" "this" {
       image        = "${var.ecr_repository_url}:latest"
       essential    = true
       portMappings = [{ containerPort = 8080, protocol = "tcp" }]
+      environment  = [for k, v in var.environment_variables : { name = k, value = v }]
       logConfiguration = {
         logDriver = "awsfirelens"
         options = {

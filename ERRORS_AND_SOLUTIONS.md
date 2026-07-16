@@ -131,3 +131,12 @@ logConfiguration = {
 **Error:** `{"message":"Service Unavailable"}` returned by API Gateway even though all 3 ECS services showed `2/2 Tasks running`.
 **Why it happened:** The ALB Security Group (`orderflow-alb-sg`) in `infra/modules/security/main.tf` only had an ingress rule for **port 443 (HTTPS)**. However, our ALB Listener is configured on **port 80 (HTTP)** — the VPC Link from API Gateway connects to the ALB over HTTP internally. Because port 80 was blocked at the security group level, the ALB never received health check traffic from the ECS tasks, so it had zero healthy targets and returned 503 to every request.
 **How we fixed it:** Added a port 80 ingress rule to the ALB Security Group, allowing HTTP from `0.0.0.0/0`. The 443 rule is retained for future HTTPS/TLS support. Applied via `make up`.
+
+### 14. 500 Internal Server Error — Missing ECS Environment Variables
+**Error:** Hitting the ALB directly with `POST /orders` returned an `Internal Server Error` (500), despite the ALB target health showing as `healthy`.
+**Why it happened:** The `order-service` Python application attempts to publish to SNS using `sns.publish(TopicArn=os.getenv("SNS_TOPIC_ARN"))`. However, the ECS Task Definition in `infra/modules/ecs-service/main.tf` did not define or pass any environment variables into the container. Because `os.getenv("SNS_TOPIC_ARN")` evaluated to `None`, boto3 threw an exception which resulted in a 500 crash. This same issue affected `inventory-service` and `notification-service` which were missing their `QUEUE_URL` variables.
+**How we fixed it:**
+1. Modified `infra/modules/sns-sqs/outputs.tf` to expose `inventory_queue_url` and `notification_queue_url`.
+2. Added an `environment_variables` map variable to `infra/modules/ecs-service/variables.tf`.
+3. Updated the `container_definitions` block in `infra/modules/ecs-service/main.tf` to iterate over the `environment_variables` and inject them as container env vars.
+4. Passed the required ARNs, table names, and queue URLs to all three microservices in `infra/envs/dev/main.tf`.

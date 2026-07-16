@@ -71,6 +71,12 @@ module "order_service" {
   service_name       = "order-service"
   ecr_repository_url = module.ecs_cluster.order_service_repo_url
   target_group_arn   = module.alb.order_service_tg_arn # Requires ALB
+
+  environment_variables = {
+    "SNS_TOPIC_ARN"          = module.sns_sqs.order_events_topic_arn
+    "ORDERS_TABLE_NAME"      = "orderflow-orders-${var.env}"
+    "IDEMPOTENCY_TABLE_NAME" = "orderflow-idempotency-${var.env}"
+  }
 }
 
 # 2. Inventory Service (Backend SQS Consumer)
@@ -86,6 +92,11 @@ module "inventory_service" {
   service_name       = "inventory-service"
   ecr_repository_url = module.ecs_cluster.inventory_service_repo_url
   # No target_group_arn passed, it runs asynchronously behind the scenes
+
+  environment_variables = {
+    "QUEUE_URL"            = module.sns_sqs.inventory_queue_url
+    "INVENTORY_TABLE_NAME" = "orderflow-inventory-${var.env}"
+  }
 }
 
 # 3. Notification Service (Backend SQS Consumer)
@@ -101,6 +112,10 @@ module "notification_service" {
   service_name       = "notification-service"
   ecr_repository_url = module.ecs_cluster.notification_service_repo_url
   # No target_group_arn passed
+
+  environment_variables = {
+    "QUEUE_URL" = module.sns_sqs.notification_queue_url
+  }
 }
 
 # ==========================================

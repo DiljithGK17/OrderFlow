@@ -23,3 +23,8 @@ variable "target_group_arn" {
   type    = string
   default = null # Optional: Because inventory and notification services don't use the ALB
 }
+
+variable "environment_variables" {
+  type    = map(string)
+  default = {}
+}
