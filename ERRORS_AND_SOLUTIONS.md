@@ -60,8 +60,60 @@ This document tracks the errors encountered during the provisioning and deployme
 
 ### 10. ECS Task Crash Loop — FluentBit Sidecar Failure
 **Error:** `Service Unavailable` from API Gateway. ECS showed `Running: 0, Pending: 0, Desired: 2`. Stopped tasks showed all containers in `STOPPED` state with no exit code (indicating the task was killed before the containers ran).
-**Why it happened:** The ECS Task Definition used `awsfirelens` as the log driver for the main `order-service` container. The `awsfirelens` driver depends entirely on the `log-router` sidecar container (`amazon/aws-for-fluent-bit:stable`) being alive and healthy first. The FluentBit sidecar was crashing on startup — likely due to missing IAM permissions or misconfigured output destinations. Because the log-router was marked `essential = true`, when it crashed, ECS immediately killed the entire Fargate task including the main application container. This happened before any container even reported a failure reason.
+
+**Why FluentBit (log-router) was included in the first place:**
+In a production-grade microservices architecture, application containers should not handle their own log delivery — it's an operational concern, not a business one. `AWS for Fluent Bit` is a specialized log-routing sidecar that runs alongside the main application container inside the same Fargate Task. Here's what it was designed to do:
+- **Multi-destination log fanout:** FluentBit can simultaneously ship the same log stream to multiple destinations — e.g., AWS CloudWatch Logs for retention, Amazon S3 for archival, and an external observability platform like Grafana Loki running on our Ops EC2 instance.
+- **Log enrichment:** It can parse and restructure raw log lines (e.g., JSON logs from FastAPI) and add metadata like container name, service version, and environment before shipping.
+- **awsfirelens driver:** The `awsfirelens` log driver in Docker/ECS is a special hook. Instead of writing logs to stdout and letting the OS handle them, it pipes every log line directly to the FluentBit process running as a sidecar. FluentBit then handles where those logs actually go.
+- **Decoupled observability:** In production, if you want to change your log destination (e.g., switch from CloudWatch to Splunk), you only change the FluentBit config — not the application code.
+
+**Why it failed in this sandbox:**
+The FluentBit sidecar requires:
+1. The ECS Task Execution Role to have `logs:CreateLogGroup`, `logs:PutLogEvents` etc. permissions.
+2. A valid FluentBit output config defining *where* to send logs. Without an explicit config file mounted in, the default image has no valid output and exits immediately.
+3. Because the `log-router` container was marked `essential = true`, when it crashed, ECS treated the entire Fargate Task as failed and killed all other containers (including the main application) immediately — with no error code logged because no container ever ran long enough to report one.
+
+**Current configuration (after fix):**
+The FluentBit sidecar is kept and properly configured. The key fix was providing **inline output options** directly in the main container's `awsfirelens` log configuration. This tells FluentBit exactly where to route logs using its built-in CloudWatch Logs output plugin — no custom config file required.
+
+```hcl
+# Main container — sends logs to FluentBit via awsfirelens
+logConfiguration = {
+  logDriver = "awsfirelens"
+  options = {
+    Name              = "cloudwatch_logs"   # FluentBit's built-in CloudWatch plugin
+    region            = "us-east-1"
+    log_group_name    = "/ecs/order-service"
+    log_stream_prefix = "ecs/"
+    auto_create_group = "true"             # Auto-creates log group if it doesn't exist
+  }
+}
+
+# FluentBit sidecar — configured to add ECS metadata and route to output
+firelensConfiguration = {
+  type = "fluentbit"
+  options = { enable-ecs-log-metadata = "true" }
+}
+# FluentBit itself logs via simple awslogs so we can debug it independently
+logConfiguration = {
+  logDriver = "awslogs"
+  options = { awslogs-group = "/ecs/fluent-bit", awslogs-create-group = "true" ... }
+}
+```
+
+- The main app container writes to `stdout` as normal.
+- The `awsfirelens` driver intercepts those logs and sends them to the FluentBit process.
+- FluentBit uses the inline `cloudwatch_logs` output plugin config to route them to CloudWatch.
+- FluentBit itself logs via `awslogs` directly, so if it crashes we can inspect its own logs.
+- `CloudWatchLogsFullAccess` remains attached to the Task Execution Role for permissions.
+
+**Trade-off vs. plain awslogs:** Slightly more complex setup, but we retain production-grade multi-destination fanout capability — e.g., we can add a Loki output block later without touching application code.
+
+### 11. ECS CannotStartContainerError — uvicorn not found in $PATH
+**Error:** `CannotStartContainerError: exec: "uvicorn": executable file not found in $PATH`
+**Why it happened:** The `Dockerfile` uses a **multi-stage build** pattern. In the builder stage, packages were installed with `pip install --target=/install`, which places all library files inside the `/install` directory. The second stage then copied those files directly into `/usr/local/lib/python3.12/site-packages`. This correctly installs the Python *library* files (like `uvicorn/`), but it does **not** copy the `uvicorn` executable script which pip normally places in `/usr/local/bin/uvicorn`. Without that binary on `$PATH`, ECS could not launch the container via the `CMD ["uvicorn", ...]` instruction.
 **How we fixed it:**
-1. Removed the `log-router` (FluentBit) and `xray-daemon` sidecar containers from `infra/modules/ecs-service/main.tf` entirely.
-2. Replaced the `awsfirelens` log driver with the native `awslogs` driver which ships logs directly to AWS CloudWatch Logs — zero external dependencies.
-3. Added `CloudWatchLogsFullAccess` managed policy to the ECS Task Execution IAM Role in `infra/modules/iam/main.tf` so it can auto-create the log group on first run.
+1. Changed the builder stage to use a standard `pip install --no-cache-dir` (without `--target`), so pip installs packages into its default location (`/usr/local/lib` and `/usr/local/bin`).
+2. Updated the final stage to copy both `/usr/local/lib` (libraries) **and** `/usr/local/bin` (executables including `uvicorn`) from the builder.
+3. Changed the container `CMD` to `["python", "-m", "uvicorn", ...]` as an additional safeguard — this invokes uvicorn as a Python module rather than relying on the binary being discoverable on `$PATH`.
