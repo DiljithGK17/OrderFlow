@@ -17,3 +17,9 @@ data "aws_subnets" "default" {
     values = [data.aws_vpc.default.id] # Links to the VPC ID retrieved above
   }
 }
+
+# 3. Fetch detailed data for each subnet to filter out unsupported AZs.
+data "aws_subnet" "all" {
+  for_each = toset(data.aws_subnets.default.ids)
+  id       = each.value
+}

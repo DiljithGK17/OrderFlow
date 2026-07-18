@@ -47,9 +47,7 @@ module "alb" {
 
 module "api_gateway" {
   source             = "../../modules/api-gateway"
-  # API Gateway VPC Links are not supported in us-east-1c (use1-az3). 
-  # We slice the first two subnets to ensure it deploys in valid AZs.
-  subnet_ids         = slice(module.default_vpc.subnet_ids, 0, 2)
+  subnet_ids         = module.default_vpc.subnet_ids
   security_group_ids = [module.security.vpc_link_sg_id]
   alb_listener_arn   = module.alb.alb_listener_arn
 }
