@@ -257,3 +257,53 @@ The API Gateway was configured to route traffic through a private `VPC_LINK` int
 1. Re-aligned the architecture with enterprise best practices by making the ALB completely private. We modified `infra/modules/alb/main.tf` to set `internal = true`.
 2. Ensured the API Gateway was correctly configured to use `connection_type = "VPC_LINK"` with the internal ALB Listener ARN.
 3. Applied the changes. Terraform recreated the ALB as an internal resource. Once the ECS tasks successfully passed health checks on the new private ALB, the API Gateway successfully routed the `POST /orders` request through the VPC Link to the ECS container.
+
+---
+
+### Issue: JSONDecodeError in SQS Consumer Services
+
+#### The Problem
+After successfully testing the API Gateway to ECS path, the downstream consumers (`inventory-service` and `notification-service`) failed to process the asynchronous events. Their CloudWatch logs showed a Python `JSONDecodeError: Expecting property name enclosed in double quotes`.
+
+#### The Cause
+In `order-service/src/main.py`, the event payload was being published to SNS using Python's built-in `str()` function instead of a proper JSON serializer. This caused the JSON payload string to use single quotes instead of double quotes, making it invalid JSON. When the downstream consumers attempted to call `json.loads(msg['Body'])`, it crashed.
+
+#### How We Fixed It
+1. Updated `order-service/src/main.py` to use `json.dumps()` to serialize the payload before publishing to SNS.
+2. Rebuilt the `order-service` Docker image and forcefully pushed the new deployment to ECS.
+3. Purged the existing SQS queues and Dead Letter Queues (DLQs) to remove the malformed messages that were causing continuous restart loops.
+
+---
+
+### Issue: Terraform Deployment Failures in New AWS Sandbox (AZ Limitations)
+
+#### The Problem
+When deploying the infrastructure to a completely new AWS Sandbox account, `terraform apply` threw two errors:
+1. `BadRequestException: Subnet '...' is in Availability Zone 'use1-az3' where service is not available` (API Gateway VPC Link failure).
+2. `Unsupported: Your requested instance type (t3.small) is not supported in your requested Availability Zone (us-east-1e)` (EC2 Ops instance failure).
+
+#### The Cause
+AWS Sandboxes frequently shift which hardware Availability Zones (AZs) are mapped to standard names like `us-east-1a`. Additionally, certain AWS services (like API Gateway VPC Links and specific EC2 instance classes) are not physically supported in every AZ. Our Terraform code previously relied on hardcoded slice methods (e.g., taking the first two subnets), which accidentally selected unsupported AZs in the new sandbox environment.
+
+#### How We Fixed It
+1. Refactored the `default-vpc-lookup` Terraform module to be fully dynamic. We added a `data aws_subnet` block to query detailed information about every subnet in the default VPC.
+2. Updated the `outputs.tf` file to programmatically filter the subnet list using list comprehension, explicitly omitting `use1-az3` and `us-east-1e`:
+   `value = [for s in data.aws_subnet.all : s.id if s.availability_zone_id != "use1-az3" && s.availability_zone != "us-east-1e"]`
+3. Removed the hardcoded `slice()` logic from `api-gateway` module instantiation, passing the dynamically filtered subnets directly.
+4. Tainted the ALB using `terraform taint module.alb.aws_lb.this` because AWS sandbox permissions blocked modifying an existing ELB's subnets via `SetSubnets`. Re-running `make up` successfully destroyed and recreated the ALB in the correct AZs.
+
+---
+
+### Issue: Grafana Dashboards Missing Data (Prometheus Configuration Not Injected)
+
+#### The Problem
+After successfully deploying the observability EC2 instance, logging into Grafana showed an empty interface with the message "You haven't created any dashboards yet". The Prometheus data source was not connected, and no metrics were being scraped.
+
+#### The Cause
+The `ops-ec2-userdata.sh` script mounted a volume for `prometheus.yml` but never actually created the file. Docker created an empty directory instead, causing Prometheus to fail. Furthermore, the Grafana instance was completely blank because we did not utilize Grafana's provisioning features to automatically set up data sources on boot.
+
+#### How We Fixed It
+1. Refactored `monitoring/ops-ec2-userdata.sh` to dynamically generate a `prometheus.yml` file that scrapes the Application Load Balancer for metrics.
+2. Created a `datasource.yml` file in `grafana/provisioning/datasources` to automatically inject Prometheus as the default data source on boot.
+3. Updated `infra/modules/observability/main.tf` to process the bash script using Terraform's `templatefile()` function, dynamically injecting the real ALB DNS name (`${alb_dns_name}`) into the Prometheus scrape configuration.
+4. Tainted and recreated the `orderflow-ops-ec2` instance to execute the new user data script.

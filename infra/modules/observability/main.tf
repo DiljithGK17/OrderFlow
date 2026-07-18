@@ -60,7 +60,9 @@ resource "aws_instance" "ops" {
   iam_instance_profile   = aws_iam_instance_profile.ops_ec2.name
 
   # Injects the script that spins up the observability stack via Docker Compose
-  user_data = file("${path.module}/../../../monitoring/ops-ec2-userdata.sh")
+  user_data = templatefile("${path.module}/../../../monitoring/ops-ec2-userdata.sh", {
+    alb_dns_name = var.alb_dns_name
+  })
 
   tags = { Name = "orderflow-ops-ec2", Service = "observability" }
 }

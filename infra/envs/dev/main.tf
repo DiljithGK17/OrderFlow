@@ -125,5 +125,6 @@ module "observability" {
   subnet_ids           = module.default_vpc.subnet_ids
   ops_ec2_sg_id        = module.security.ops_ec2_sg_id
   alb_arn_suffix       = module.alb.alb_arn_suffix
+  alb_dns_name         = module.alb.alb_dns_name
   ops_alerts_topic_arn = "arn:aws:sns:us-east-1:123456789012:orderflow-ops-alerts"
 }
