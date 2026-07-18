@@ -155,3 +155,57 @@ logConfiguration = {
 **Error:** `denied: User: ... is not authorized to perform: ecr:InitiateLayerUpload on resource: arn:aws:ecr:us-east-1:905418031803:repository/orderflow/order-service`
 **Why it happened:** The `.github/workflows/deploy.yml` pipeline had the AWS Account ID `905418031803` (from the previous sandbox session) hardcoded in multiple places for the ECR registry URL. When the new sandbox session was started, a new AWS Account ID was assigned. The pipeline successfully authenticated with the new account's credentials but then attempted to push the Docker images to the old account's ECR repository, resulting in an IAM access denied error.
 **How we fixed it:** Replaced the hardcoded Account ID in `.github/workflows/deploy.yml` with a dynamic fetch using the AWS CLI (`ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)`). Now the pipeline automatically detects the correct ECR registry URL for whichever AWS sandbox account is currently active.
+
+### 18. API Gateway 503 — VPC Link Security Group Blocking All Traffic
+**Error:** `{"message":"Service Unavailable"}` from every API Gateway route, even though the ALB direct call worked perfectly and the VPC Link showed `VpcLinkStatus: AVAILABLE`.
+
+---
+
+#### What is a VPC Link and Why Do We Need It?
+AWS API Gateway is a **fully managed service that runs outside your VPC**. It exists in AWS's public, managed address space — not inside your private network. Your ECS tasks, ALB, and DynamoDB tables all live inside a **private VPC (Virtual Private Cloud)** that is isolated from the public internet.
+
+Without a VPC Link, API Gateway cannot reach your private ALB at all. It would be like trying to call a phone number that doesn't exist on the public network.
+
+**A VPC Link solves this by acting as a private bridge:**
+1. You create an `aws_apigatewayv2_vpc_link` resource and tell it which VPC subnets to use.
+2. AWS automatically provisions **Elastic Network Interfaces (ENIs)** — private IP addresses — inside those subnets on your behalf.
+3. API Gateway connects to these ENIs through AWS's internal backbone network (no public internet involved).
+4. The ENI then routes the request to the ALB's private IP address on port 80.
+
+The full network path looks like this:
+```
+Client (internet)
+  → API Gateway (AWS managed, outside VPC)
+  → VPC Link ENI (inside your VPC, private IP)
+  → Application Load Balancer (private IP, port 80)
+  → ECS Task (private IP, port 8080)
+```
+
+A Security Group is attached to the VPC Link's ENIs to control what traffic those ENIs can send and receive within the VPC.
+
+---
+
+#### Why the Error Occurred
+In `infra/envs/dev/main.tf`, the API Gateway module was configured to use the **ECS Security Group** (`orderflow-ecs-sg`) for the VPC Link:
+```hcl
+module "api_gateway" {
+  security_group_ids = [module.security.ecs_sg_id]  # WRONG
+}
+```
+The ECS Security Group has very strict inbound rules: it only allows **port 8080 from the ALB Security Group**. This is intentional for ECS tasks — it prevents anything other than the ALB from calling them directly.
+
+However, applying this same security group to the VPC Link ENI meant that the ENI itself was bound by those restrictive rules. When API Gateway's internal routing tried to push traffic through the VPC Link ENI to the ALB, the ENI's security group inspected the traffic and blocked it.
+
+**Diagnostic proof:** We tested two paths:
+- `curl http://ALB-DNS/healthz` → HTTP 404 (ALB's own "Not Found" default response — ALB is reachable ✓)
+- `curl https://API-GW-URL/healthz` → HTTP 503 (API Gateway could not reach the ALB at all)
+
+If the VPC Link could reach the ALB, `/healthz` would have returned a `404` from the ALB via API Gateway. Instead we got `503`, confirming the VPC Link ENI's security group was the blocker.
+
+---
+
+#### How We Fixed It
+1. Created a new dedicated Security Group `orderflow-vpc-link-sg` in `infra/modules/security/main.tf` with fully open inbound and outbound rules (`0.0.0.0/0` on all ports). This is the correct and recommended pattern — the VPC Link is the gateway into your private network, and the resources it connects to (the ALB, ECS) still have their own strict security groups to enforce boundaries.
+2. Exported `vpc_link_sg_id` from `infra/modules/security/outputs.tf`.
+3. Switched the API Gateway module in `infra/envs/dev/main.tf` to use `module.security.vpc_link_sg_id` instead of `module.security.ecs_sg_id`.
+4. Applied via `make up`. The VPC Link was recreated with the new security group (takes ~5–10 minutes to become `AVAILABLE`).
