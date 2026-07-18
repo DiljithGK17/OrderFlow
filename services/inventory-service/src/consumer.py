@@ -18,6 +18,9 @@ def poll():
                     UpdateExpression="SET stock = stock - :q",
                     ExpressionAttributeValues={":q": body["quantity"]}
                 )
+                print(f"[inventory-service] Successfully deducted {body['quantity']} of {body['sku']} for order {body['orderId']}", flush=True)
+            else:
+                print(f"[inventory-service] Insufficient stock or invalid SKU for order {body['orderId']}", flush=True)
             sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=msg["ReceiptHandle"])
         time.sleep(1)
 

@@ -13,7 +13,7 @@ def poll():
             body = json.loads(msg["Body"])
             # In production this would send an email/push notification.
             # For now we log the event so the service stays healthy.
-            print(f"[notification-service] OrderCreated event received: {body}")
+            print(f"[notification-service] OrderCreated event received: {body}", flush=True)
             sqs.delete_message(
                 QueueUrl=QUEUE_URL, ReceiptHandle=msg["ReceiptHandle"]
             )

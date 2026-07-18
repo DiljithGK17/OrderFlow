@@ -178,6 +178,17 @@ Yes, absolutely! Even acting as a simple passthrough, the API Gateway provides c
 4. If the ALB receives the HTTP 200 OK, it marks the container as **Healthy** and actively forwards user API traffic to it.
 5. If the application crashes, hangs, or returns an error (like the 404 we saw when NGINX was misconfigured), the ALB marks it **Unhealthy**. It immediately stops sending user traffic to that container, and AWS ECS automatically kills the container and spins up a fresh replacement to heal the system.
 
+### How does the Asynchronous Event-Driven flow actually work after SNS?
+When the `order-service` publishes a message to SNS, SNS instantly fans it out (duplicates it) into the `inventory-queue` and `notification-queue` (SQS).
+
+But what happens next? The SQS queues **do not** push the messages to the Inventory or Notification containers. Instead, it relies on a **Pull Model**:
+1. **Worker Processes:** Unlike the Order Service (which waits for HTTP requests from the ALB), the `inventory-service` and `notification-service` are background worker processes. They run an infinite loop in Python (`while True:`).
+2. **Long-Polling:** Inside that infinite loop, they use the AWS SDK (`boto3`) to continuously poll their specific SQS queue, asking: *"Do you have any new messages?"*
+3. **Processing:** When the SNS Topic drops a message into the queue, the waiting worker immediately grabs it, parses the JSON payload, and executes its business logic (like subtracting stock from DynamoDB).
+4. **Deletion:** Once the work finishes successfully, the worker sends an explicit command back to SQS to delete the message so it isn't processed again.
+
+**Why design it this way?** If a massive traffic spike occurs (e.g., 10,000 orders/sec), the Order Service instantly throws those messages onto the queues and returns a "Success" to the user. The backend workers can then pull and process those 10,000 messages at their own safe, steady pace (e.g., 50/sec) without crashing the database. The queues act as a massive "shock absorber" for the architecture!
+
 ---
 
 ## Summary

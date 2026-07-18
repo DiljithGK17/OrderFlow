@@ -55,7 +55,7 @@ resource "aws_lb_listener_rule" "order_service" {
   priority     = 10
   condition {
     path_pattern {
-      values = ["/orders", "/orders/*"]
+      values = ["/orders", "/orders/*", "/metrics", "/metrics/*"]
     }
   }
   action {

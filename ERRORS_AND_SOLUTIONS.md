@@ -307,3 +307,60 @@ The `ops-ec2-userdata.sh` script mounted a volume for `prometheus.yml` but never
 2. Created a `datasource.yml` file in `grafana/provisioning/datasources` to automatically inject Prometheus as the default data source on boot.
 3. Updated `infra/modules/observability/main.tf` to process the bash script using Terraform's `templatefile()` function, dynamically injecting the real ALB DNS name (`${alb_dns_name}`) into the Prometheus scrape configuration.
 4. Tainted and recreated the `orderflow-ops-ec2` instance to execute the new user data script.
+
+---
+
+### Issue: 500 Internal Server Error (KeyError in Python)
+
+#### The Problem
+When running the `curl` command to generate an order via the API Gateway, the response returned `500 Internal Server Error`.
+
+#### The Cause
+The `curl` command was incorrectly formatted with the JSON payload `{"customer_id": "...", "items": [...]}`. However, the Python `order-service` code expects a different schema: `{"customerId": "...", "sku": "...", "quantity": ...}`. The mismatch caused a Python `KeyError` when attempting to read the `customerId`, resulting in an unhandled exception and a 500 crash.
+
+#### How We Fixed It
+Corrected the API invocation command to match the schema exactly as expected by the microservice backend.
+
+---
+
+### Issue: Prometheus Not Showing Metrics Data (ALB Routing Error)
+
+#### The Problem
+After successfully configuring Prometheus to scrape the ALB (`internal-orderflow-alb-...`), the Grafana dashboard still showed "No data" for `orders_created_total`.
+
+#### The Cause
+Prometheus attempts to scrape metrics by sending an HTTP GET request to `http://<ALB_DNS>/metrics`. The ALB Listener Rule (`infra/modules/alb/main.tf`) was initially configured to only forward `/orders` and `/orders/*`. 
+
+When we added `/metrics`, Prometheus still failed because FastAPI mounts the ASGI app and issues a `307 Temporary Redirect` to `/metrics/` (with a trailing slash). Because `/metrics/` was not explicitly allowed by the ALB listener, the ALB blocked the redirect request with a `404 Not Found`.
+
+#### How We Fixed It
+1. Updated the ALB listener rule condition in `infra/modules/alb/main.tf` to include *both* `/metrics` and `/metrics/*` in the `path_pattern.values` array to allow the trailing slash redirect to pass through.
+2. Ran `make up` to apply the Terraform change, allowing the ALB to correctly forward Prometheus's scraping requests to the backend Python containers.
+
+---
+
+### Issue: Sandbox AccessDenied Error When Modifying ALB Listener Rule
+
+#### The Problem
+When running `make up` to apply the new `/metrics` routing path to the ALB Listener Rule, Terraform failed with an `AccessDenied: User ... is not authorized to perform: elasticloadbalancing:ModifyRule`.
+
+#### The Cause
+Similar to the `SetSubnets` issue with the ALB itself, the KodeKloud AWS Sandbox implements Service Control Policies (SCPs) that aggressively restrict in-place modifications of certain infrastructure components. While you are allowed to *create* and *destroy* Load Balancer rules, the IAM policy attached to your user strictly denies the `ModifyRule` action.
+
+#### How We Fixed It
+Instead of attempting an in-place modification, we instructed Terraform to destroy the existing rule and create a brand new one using the `taint` command:
+`terraform taint module.alb.aws_lb_listener_rule.order_service`
+Subsequent runs of `make up` successfully destroyed and recreated the rule with the new `/metrics` path pattern included, completely bypassing the blocked `ModifyRule` permission.
+
+---
+
+### Issue: CloudWatch Log Groups Missing for Python Worker Services
+
+#### The Problem
+After successfully triggering the SNS -> SQS -> ECS Worker pipeline, the backend worker containers (`inventory-service` and `notification-service`) successfully consumed and processed the messages. However, their CloudWatch Log Groups (e.g., `/ecs/notification-service`) did not appear in the AWS Console, making it seem like the services were dead.
+
+#### The Cause
+By default, Python buffers its standard output (`stdout`) when running non-interactively (like inside a Docker container). The `consumer.py` scripts used standard `print()` statements to log the events. Because the output was buffered, the text was held in memory and never flushed to `stdout`. Since the `aws-firelens` (FluentBit) sidecar strictly reads from `stdout` to push logs to CloudWatch, it never received the logs. And because the `auto_create_group=true` option in FluentBit only creates the log group upon receiving the *first* log line, the log groups were never created in AWS.
+
+#### How We Fixed It
+Modified the `print()` statements in `services/notification-service/src/consumer.py` and `services/inventory-service/src/consumer.py` to explicitly disable buffering by adding `flush=True` (e.g., `print("event received", flush=True)`). After committing the changes and allowing the CI/CD pipeline to deploy the updated Docker images, the logs immediately flushed to `stdout` and appeared in CloudWatch.
