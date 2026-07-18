@@ -209,3 +209,51 @@ If the VPC Link could reach the ALB, `/healthz` would have returned a `404` from
 2. Exported `vpc_link_sg_id` from `infra/modules/security/outputs.tf`.
 3. Switched the API Gateway module in `infra/envs/dev/main.tf` to use `module.security.vpc_link_sg_id` instead of `module.security.ecs_sg_id`.
 4. Applied via `make up`. The VPC Link was recreated with the new security group (takes ~5–10 minutes to become `AVAILABLE`).
+
+---
+
+### Issue: `aws sts get-caller-identity` SSL Validation Failed
+
+#### The Problem
+When running `aws sts get-caller-identity` in the terminal to verify the AWS credentials, the command failed with `SSL validation failed for https://sts.auto.amazonaws.com/ [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self signed certificate`.
+
+#### The Cause
+During `aws configure`, the default region was set to `auto`. The AWS CLI attempted to connect to `sts.auto.amazonaws.com`, which is an invalid endpoint, leading to an SSL certificate error.
+
+#### How We Fixed It
+Manually exported the AWS credentials and correctly set the region to a valid AWS region (e.g., `us-east-1`):
+```bash
+export AWS_ACCESS_KEY_ID="AKIA..."
+export AWS_SECRET_ACCESS_KEY="..."
+export AWS_DEFAULT_REGION="us-east-1"
+```
+After fixing the region, the `aws sts get-caller-identity` command successfully authenticated.
+
+---
+
+### Issue: Terraform Bucket Typo Caused Failed State Migration
+
+#### The Problem
+When trying to run `terraform apply` after modifying the API Gateway module, Terraform threw the error: `Error: Failed to get existing workspaces: S3 bucket "orderflow-tfstate-1784357686q" does not exist.`
+
+#### The Cause
+A typo was introduced into `infra/envs/dev/backend.tf`, where the bucket name was accidentally appended with a `q` (`1784357686q` instead of the correct `1784357686`). Terraform could not initialize the remote backend because the specified bucket did not exist.
+
+#### How We Fixed It
+1. Corrected the bucket name in `backend.tf` by removing the erroneous `q`.
+2. Ran `terraform init -reconfigure` to safely reset the backend configuration and successfully connect to the correct S3 bucket.
+
+---
+
+### Issue: API Gateway VPC Link 503 Service Unavailable With Public ALB
+
+#### The Problem
+After successful deployment, sending a `POST /orders` request to the API Gateway returned a `503 Service Unavailable` error, even though hitting the Application Load Balancer (ALB) directly worked perfectly.
+
+#### The Cause
+The API Gateway was configured to route traffic through a private `VPC_LINK` integration via the ALB's Listener ARN. However, the ALB was configured as an internet-facing (public) load balancer (`internal = false`). AWS API Gateway `VPC_LINK` private integrations are designed specifically to connect to *private* resources. Routing a private VPC Link to an internet-facing ALB can lead to integration failures and 503 errors.
+
+#### How We Fixed It
+1. Re-aligned the architecture with enterprise best practices by making the ALB completely private. We modified `infra/modules/alb/main.tf` to set `internal = true`.
+2. Ensured the API Gateway was correctly configured to use `connection_type = "VPC_LINK"` with the internal ALB Listener ARN.
+3. Applied the changes. Terraform recreated the ALB as an internal resource. Once the ECS tasks successfully passed health checks on the new private ALB, the API Gateway successfully routed the `POST /orders` request through the VPC Link to the ECS container.

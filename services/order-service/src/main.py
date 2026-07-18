@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-import boto3, uuid, time
+import boto3, uuid, time, json
 from prometheus_client import Counter, Histogram, make_asgi_app
 import os
 
@@ -39,7 +39,7 @@ def create_order(payload: dict, request: Request):
         })
         sns.publish(
             TopicArn=os.getenv("SNS_TOPIC_ARN"),
-            Message=str({"orderId": order_id, "sku": payload["sku"], "quantity": payload["quantity"]}),
+            Message=json.dumps({"orderId": order_id, "sku": payload["sku"], "quantity": payload["quantity"]}),
             MessageAttributes={"eventType": {"DataType": "String", "StringValue": "OrderCreated"}}
         )
     ORDERS_CREATED.inc()

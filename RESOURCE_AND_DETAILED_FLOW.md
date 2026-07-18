@@ -164,7 +164,7 @@ Once ECS spins up the new container and it passes the Load Balancer's `/healthz`
 Yes, absolutely! Even acting as a simple passthrough, the API Gateway provides critical "API Management" features that an ALB does not natively handle well:
 1. **Throttling & Rate Limiting:** We configured our API Gateway Stage to restrict traffic to 100 requests/second. This protects our backend databases and compute from DDoS attacks or runaway client scripts.
 2. **Authentication:** In a full production environment, API Gateway natively integrates with AWS Cognito or custom Lambda Authorizers to instantly reject unauthorized requests *before* they ever reach our VPC compute layer.
-3. **Network Security:** While our Sandbox limitations forced the ALB into public subnets, a true production architecture places the ALB in *Private* subnets. The API Gateway + VPC Link acts as the only secure bridge from the public internet into your private network.
+3. **Network Security:** We implemented a true enterprise architecture by placing the ALB in *Private* subnets (`internal = true`). This removes the compute layer from the public internet entirely. The API Gateway + VPC Link acts as the *only* secure bridge from the public internet into our private VPC network.
 
 ### Why did we originally include an NGINX Sidecar, and why did we remove it?
 **Why we included it:** In enterprise microservices, putting a lightweight NGINX proxy right in front of Python (a "sidecar") is a best practice. Python web servers (like Uvicorn) are not heavily optimized for things like SSL termination, mitigating slow-client DDoS attacks (Slowloris), or serving static assets. NGINX acts as a hardened shield, buffering slow requests and forwarding only clean, rapid traffic to Python.

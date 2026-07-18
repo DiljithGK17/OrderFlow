@@ -4,10 +4,10 @@
 # Distributes incoming traffic across the multiple ECS Tasks.
 
 # 1. Application Load Balancer
-# Placed in the public subnets so it is accessible over the internet.
+# Placed in the VPC privately. Only accessible via API Gateway VPC Link.
 resource "aws_lb" "this" {
   name               = "orderflow-alb"
-  internal           = false
+  internal           = true
   load_balancer_type = "application"
   subnets            = var.subnet_ids
   security_groups    = var.security_group_ids

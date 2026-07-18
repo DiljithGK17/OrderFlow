@@ -134,7 +134,7 @@ They never call each other directly. They only talk through **DynamoDB (storage)
                 │  VPC Link
                 ▼
  ┌───────────────────────────────┐
- │  Application Load Balancer      │  - DEFAULT VPC public subnets, sits behind sg-alb
+ │  Application Load Balancer      │  - Internal ALB (internal=true) in DEFAULT VPC subnets, sits behind sg-alb
  │  (Layer 7, path-based routing)  │  - TLS termination (ACM cert)
  │  /orders/*  → TG-order           │  - health checks on /healthz
  │  /inventory/* → TG-inventory      │
